@@ -29,7 +29,7 @@
 %   intIter=50;
 %   [resultImbalancedC45,feature_scores] = nFold_AnyClassifier_withFeatureselection_v3(data_all_w,labels,feature_list_t,para,1,intFolds,intIter);
 
-% (c) Edited by Cheng Lu,
+% (c) Edited by Cheng Lu, 
 % Biomedical Engineering,
 % Case Western Reserve Univeristy, cleveland, OH. Aug, 2016
 % If you have any problem feel free to contact me.
@@ -45,8 +45,8 @@
 % from the authors.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-% v4 can return the balance acc
-function [stats, feature_scores]= nFold_AnyClassifier_withFeatureselection_v4(data_set,data_labels,feature_list,para,shuffle,n,nIter,Subsets)
+
+function [stats, feature_scores]= nFold_AnyClassifier_withFeatureselection_v3(data_set,data_labels,feature_list,para,shuffle,n,nIter,Subsets)
 
 
 data_labels=double(data_labels);
@@ -80,13 +80,11 @@ for j=1:nIter
     
     if isempty(Subsets)
         [tra tes]=GenerateSubsets('nFold',data_set,data_labels,shuffle,n);
-        
-%         [tra tes]=GenerateSubsets('nFold_balanced_trainset',data_set,data_labels,shuffle,n);
-        decision=zeros(size(data_labels)); prediction=zeros(size(data_labels));
+         decision=zeros(size(data_labels)); prediction=zeros(size(data_labels));
     else
         tra{1} = Subsets{j}.training;
         tes{1} = Subsets{j}.testing;
-        %         decision=zeros(size(tes{1})); prediction=zeros(size(tes{1}));
+%         decision=zeros(size(tes{1})); prediction=zeros(size(tes{1}));
     end
     
     for i=1:n
@@ -102,7 +100,7 @@ for j=1:nIter
         if strcmp(para.featureranking,'mrmr')
             %         map the data in to binary values 0 1
             dataw_discrete=makeDataDiscrete_mrmr(training_set);
-            %             dataw_discrete=training_set>t; check check check
+%             dataw_discrete=training_set>t; check check check
             setAll=1:size(training_set,2);
             [idx_TTest] = mrmr_mid_d(dataw_discrete(:,setAll), training_labels, para.num_top_feature);
         end
@@ -120,18 +118,18 @@ for j=1:nIter
             %% using ttest
             if strcmp(para.featureranking,'ttest')
                 [TTidx,confidence] = prunefeatures_new(training_set, training_labels, 'ttestp');
-                %                 idx_TTest=TTidx(confidence<0.05);
-                %                 if isempty(idx_TTest)
-                idx_TTest=TTidx(1:min(para.num_top_feature*3,size(data_set,2)));
-                %                 end
+                idx_TTest=TTidx(confidence<0.05);
+                if isempty(idx_TTest)
+                    idx_TTest=TTidx(1:min(para.num_top_feature*2,size(data_set,2)));
+                end
             end
             
             if strcmp(para.featureranking,'wilcoxon')
-                [TTidx,confidence] = prunefeatures_new(training_set, training_labels, 'wilcoxon');%sum(training_labels)
-                %                 idx_TTest=TTidx(confidence<0.5);
-                %                 if isempty(idx_TTest)
-                idx_TTest=TTidx(1:min(para.num_top_feature*3,size(data_set,2)));
-                %                 end
+                [TTidx,confidence] = prunefeatures_new(training_set, training_labels, 'wilcoxon');
+                idx_TTest=TTidx(confidence<0.3);
+                if isempty(idx_TTest)
+                    idx_TTest=TTidx(1:min(para.num_top_feature*3,size(data_set,2)));
+                end
             end
             
             %%% lock down top features with low correlation
@@ -190,7 +188,7 @@ for j=1:nIter
         Tfn = Tfn + temp_stats.fn;
         if ~isempty(Subsets)
             stats=temp_stats;
-            return;
+            return; 
         end
         decision(tes{i}) = temp_stats.decision;
         
@@ -230,22 +228,4 @@ for j=1:nIter
     stats(j).prediction = prediction;
     Pre = ((Ttp+Tfp)*(Ttp+Tfn) + (Ttn+Tfn)*(Ttn+Tfp)) / (Ttp+Ttn+Tfp+Tfn)^2;
     stats(j).kappa = (stats(j).acc - Pre) / (1 - Pre);
-    
-    
-    % get a blance sens and spec to report
-    if para.get_balance_sens_spec
-        spe=1-FPR;
-        labels=stats(j).labels;
-        balanceAcc=(spe+TPR)/2;
-        [~,maxIdx]=max(balanceAcc);
-        stats(j).sens=TPR(maxIdx);
-        stats(j).spec=1-FPR(maxIdx);
-        stats(j).tp=round(stats(j).sens*sum(labels));
-        stats(j).tn=round(stats(j).spec*sum(~labels));
-        stats(j).fp=sum(~labels)-stats(j).tn;
-        stats(j).fn=sum(labels)-stats(j).tp;
-        stats(j).acc=(stats(j).tp+stats(j).tn)/length(labels);
-        %% modeified other metrics if neccesary !!
-        
-    end
 end

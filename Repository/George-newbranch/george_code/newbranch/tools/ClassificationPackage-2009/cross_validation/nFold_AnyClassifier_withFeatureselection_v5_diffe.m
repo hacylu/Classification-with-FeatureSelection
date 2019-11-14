@@ -1,4 +1,4 @@
-
+% v5 can use balanced train set in CV
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Input:
 %   data_set: data
@@ -20,14 +20,15 @@
 %   stats: struct containing TP, FP, TN, FN, etc.
 %   The function is written by Cheng Lu @2016
 %   example here:
-%   para.feature_score_method='weighted';
-%   para.classifier='QDA';
-%   para.num_top_feature=5;
-%    para.featureranking='wilcoxon';
-%    para.correlation_factor=.9;
-%   intFolds=5;
-%   intIter=50;
-%   [resultImbalancedC45,feature_scores] = nFold_AnyClassifier_withFeatureselection_v3(data_all_w,labels,feature_list_t,para,1,intFolds,intIter);
+% para.balanced_trainset=1;
+% para.get_balance_sens_spec=1;
+% para.feature_score_method='weighted';
+% para.classifier='BaggedC45';
+% para.num_top_feature=6;
+% para.featureranking='wilcoxon';
+% para.correlation_factor=.99;
+% [resultImbalancedC45,feat_scores] = nFold_AnyClassifier_withFeatureselection_v5(data_cLoCoM_train_truncated_583(label_SC_AD,:),double(label_KRAS(label_SC_AD)),...
+%     feature_list_truncated,para,1,5,10);
 
 % (c) Edited by Cheng Lu,
 % Biomedical Engineering,
@@ -46,7 +47,9 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % v4 can return the balance acc
-function [stats, feature_scores]= nFold_AnyClassifier_withFeatureselection_v4(data_set,data_labels,feature_list,para,shuffle,n,nIter,Subsets)
+% 'nFold_AnyClassifier_withFeatureselection_v5_diffe' this version takes top features from different families specified in
+% data_set, a cell contains feature values from different feature families
+function [stats, feature_scores]= nFold_AnyClassifier_withFeatureselection_v5_diffe(data_set,data_labels,feature_list,para,shuffle,n,nIter,Subsets)
 
 
 data_labels=double(data_labels);
@@ -63,9 +66,21 @@ end
 if nargin < 5
     shuffle = 1; % randomized
 end
+data_set_cell=data_set;
+data_set=data_set_cell{1};
+data_set_all=[];
+feature_list_all=[];
+str_num_feat_config=[];
+for i=1:length(data_set_cell)
+    data_set_all=[data_set_all data_set_cell{i}];
+    feature_list_all=[feature_list_all; feature_list{i}];
+    str_num_feat_config=[str_num_feat_config,num2str([para.num_features_from_each_feat_families(i)]) ','];
+end
 
+str_num_feat_config=str_num_feat_config(1:end-1);
+
+feature_list_cell=feature_list;
 % if any(~xor(data_labels == 1, data_labels == -1)), error('Labels must be 1 and -1'); end
-feature_scores=zeros(size(data_set,2),1);
 
 if size(data_set,1)~=length(data_labels)
     error('the size of the feature data should be the same as the label data!!!');
@@ -79,9 +94,14 @@ for j=1:nIter
     Ttp = 0; Ttn = 0; Tfp = 0; Tfn = 0;
     
     if isempty(Subsets)
-        [tra tes]=GenerateSubsets('nFold',data_set,data_labels,shuffle,n);
-        
-%         [tra tes]=GenerateSubsets('nFold_balanced_trainset',data_set,data_labels,shuffle,n);
+
+        if para.balanced_trainset
+            [tra tes]=GenerateSubsets('nFold_balanced_trainset',data_set,data_labels,shuffle,n);
+%             train=tra{1}; test=tes{1};
+            %intersect(train,test)
+        else
+            [tra tes]=GenerateSubsets('nFold',data_set,data_labels,shuffle,n);
+        end
         decision=zeros(size(data_labels)); prediction=zeros(size(data_labels));
     else
         tra{1} = Subsets{j}.training;
@@ -90,56 +110,77 @@ for j=1:nIter
     end
     
     for i=1:n
-        fprintf(['Fold # ' num2str(i) '\n']);
         
-        training_set = data_set(tra{i},:);
-        testing_set = data_set(tes{i},:);
-        training_labels = data_labels(tra{i});
-        testing_labels = data_labels(tes{i});
-        
-        %%% do feature selection on the fly
-        %% using mrmr
-        if strcmp(para.featureranking,'mrmr')
-            %         map the data in to binary values 0 1
-            dataw_discrete=makeDataDiscrete_mrmr(training_set);
-            %             dataw_discrete=training_set>t; check check check
-            setAll=1:size(training_set,2);
-            [idx_TTest] = mrmr_mid_d(dataw_discrete(:,setAll), training_labels, para.num_top_feature);
-        end
-        
-        %% using random forest
-        if strcmp(para.featureranking,'rf')
-            options = statset('UseParallel','never','UseSubstreams','never');
-            B = TreeBagger(50,training_set,training_labels,'FBoot',0.667, 'oobpred','on','OOBVarImp', 'on', 'Method','classification','NVarToSample','all','NPrint',4,'Options',options);
-            variableimportance = B.OOBPermutedVarDeltaError;
-            [t,idx]=sort(variableimportance,'descend');
-            idx_TTest=idx(1:para.num_top_feature);
-        end
-        
-        if strcmp(para.featureranking,'ttest') | strcmp(para.featureranking,'wilcoxon')
-            %% using ttest
-            if strcmp(para.featureranking,'ttest')
-                [TTidx,confidence] = prunefeatures_new(training_set, training_labels, 'ttestp');
-                %                 idx_TTest=TTidx(confidence<0.05);
-                %                 if isempty(idx_TTest)
-                idx_TTest=TTidx(1:min(para.num_top_feature*3,size(data_set,2)));
-                %                 end
+        for i_feat_families=1:length(data_set_cell)
+            fprintf(['Fold #' num2str(i) '\n']);
+            data_set=data_set_cell{i_feat_families};
+            feature_list=feature_list_cell{i_feat_families};
+            training_set = data_set(tra{i},:);
+            testing_set = data_set(tes{i},:);
+            training_labels = data_labels(tra{i});%sum(training_labels)  sum(~training_labels)
+            testing_labels = data_labels(tes{i});%sum(testing_labels) sum(~testing_labels)
+            
+            %%% do feature selection on the fly
+            %% using mrmr
+            if strcmp(para.featureranking,'mrmr')
+                %         map the data in to binary values 0 1
+                dataw_discrete=makeDataDiscrete_mrmr(training_set);
+                %             dataw_discrete=training_set>t; check check check
+                setAll=1:size(training_set,2);
+                [idx_TTest_tmp{i_feat_families}] = mrmr_mid_d(dataw_discrete(:,setAll), training_labels, para.num_top_feature);
             end
             
-            if strcmp(para.featureranking,'wilcoxon')
-                [TTidx,confidence] = prunefeatures_new(training_set, training_labels, 'wilcoxon');%sum(training_labels)
-                %                 idx_TTest=TTidx(confidence<0.5);
-                %                 if isempty(idx_TTest)
-                idx_TTest=TTidx(1:min(para.num_top_feature*3,size(data_set,2)));
-                %                 end
+            %% using random forest
+            if strcmp(para.featureranking,'rf')
+                options = statset('UseParallel','never','UseSubstreams','never');
+                B = TreeBagger(50,training_set,training_labels,'FBoot',0.667, 'oobpred','on','OOBVarImp', 'on', 'Method','classification','NVarToSample','all','NPrint',4,'Options',options);
+                variableimportance = B.OOBPermutedVarDeltaError;
+                [t,idx]=sort(variableimportance,'descend');
+                idx_TTest_tmp{i_feat_families}=idx(1:para.num_top_feature);
             end
             
-            %%% lock down top features with low correlation
-            set_candiF=Lpick_top_n_features_with_pvalue_correlation(training_set,idx_TTest,para.num_top_feature,para.correlation_factor);
-            set_fff=feature_list(set_candiF)'; % training_set(:,373)
-            idx_TTest=set_candiF;
+            if strcmp(para.featureranking,'ttest') | strcmp(para.featureranking,'wilcoxon')
+                %% using ttest
+                if strcmp(para.featureranking,'ttest')
+                    [TTidx,confidence] = prunefeatures_new(training_set, training_labels, 'ttestp');
+                    %                 idx_TTest=TTidx(confidence<0.05);
+                    %                 if isempty(idx_TTest)
+                    idx_TTest=TTidx(1:min(para.num_top_feature*8,size(data_set,2)));
+                    %                 end
+                end
+                
+                if strcmp(para.featureranking,'wilcoxon')
+                    [TTidx,confidence] = prunefeatures_new(training_set, training_labels, 'wilcoxon');
+                    %                 idx_TTest=TTidx(confidence<0.5);
+                    %                 if isempty(idx_TTest)
+                    idx_TTest=TTidx(1:min(para.num_top_feature*8,size(data_set,2)));
+                    %                 end
+                end
+                
+                %%% lock down top features with low correlation
+                set_candiF=Lpick_top_n_features_with_pvalue_correlation(training_set,idx_TTest,para.num_features_from_each_feat_families(i_feat_families),para.correlation_factor);
+                set_fff{i_feat_families}=feature_list(set_candiF)'; % training_set(:,373)
+                idx_TTest_tmp{i_feat_families}=set_candiF;
+            end
         end
+        %% combine the top features from different feature families
+%         set_top_feats_names_in_diff_feat_families=[];
+        idx_TTest=[];
+        offset=0;%feature index offset
+        for itmp=1:length(data_set_cell)
+%             set_top_feats_names_in_diff_feat_families=[set_top_feats_names_in_diff_feat_families set_fff{itmp}];
+            idx_TTest=[idx_TTest idx_TTest_tmp{itmp}+offset];
+            offset=offset+size(data_set_cell{itmp},2);
+        end
+        
         %% test on the testing set
+        feature_scores=zeros(offset,1);
+        
+%         training_set
+%         testing_set
+        
+        training_set = data_set_all(tra{i},:);
+        testing_set = data_set_all(tes{i},:);
         %         a=setTopF_TTest{1};b=setTopF_TTest{2};
         %         strcmp
         %         interr=intersect(a,b);
@@ -152,7 +193,8 @@ for j=1:nIter
             feature_scores(idx_TTest)=feature_scores(idx_TTest)+ linspace( para.num_top_feature ,1, length(idx_TTest))';
         end
         
-        fprintf('on the fold, %d features are picked\n', length(idx_TTest));
+        
+        fprintf('on the fold, %d features are picked from %d diffrent feature families(distributed as %s)\n', length(idx_TTest), length(data_set_cell),str_num_feat_config);
         try
             if strcmp(para.classifier,'BaggedC45')
                 [temp_stats,methodstring] = Classify( 'BaggedC45', training_set(:,idx_TTest) , testing_set(:,idx_TTest), training_labels(:), testing_labels(:));

@@ -1,4 +1,4 @@
-
+% v5 can use balanced train set in CV
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Input:
 %   data_set: data
@@ -20,14 +20,15 @@
 %   stats: struct containing TP, FP, TN, FN, etc.
 %   The function is written by Cheng Lu @2016
 %   example here:
-%   para.feature_score_method='weighted';
-%   para.classifier='QDA';
-%   para.num_top_feature=5;
-%    para.featureranking='wilcoxon';
-%    para.correlation_factor=.9;
-%   intFolds=5;
-%   intIter=50;
-%   [resultImbalancedC45,feature_scores] = nFold_AnyClassifier_withFeatureselection_v3(data_all_w,labels,feature_list_t,para,1,intFolds,intIter);
+% para.balanced_trainset=1;
+% para.get_balance_sens_spec=1;
+% para.feature_score_method='weighted';
+% para.classifier='BaggedC45';
+% para.num_top_feature=6;
+% para.featureranking='wilcoxon';
+% para.correlation_factor=.99;
+% [resultImbalancedC45,feat_scores] = nFold_AnyClassifier_withFeatureselection_v5(data_cLoCoM_train_truncated_583(label_SC_AD,:),double(label_KRAS(label_SC_AD)),...
+%     feature_list_truncated,para,1,5,10);
 
 % (c) Edited by Cheng Lu,
 % Biomedical Engineering,
@@ -46,7 +47,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % v4 can return the balance acc
-function [stats, feature_scores]= nFold_AnyClassifier_withFeatureselection_v4(data_set,data_labels,feature_list,para,shuffle,n,nIter,Subsets)
+function [stats, feature_scores]= nFold_AnyClassifier_withFeatureselection_v5(data_set,data_labels,feature_list,para,shuffle,n,nIter,Subsets)
 
 
 data_labels=double(data_labels);
@@ -79,9 +80,14 @@ for j=1:nIter
     Ttp = 0; Ttn = 0; Tfp = 0; Tfn = 0;
     
     if isempty(Subsets)
-        [tra tes]=GenerateSubsets('nFold',data_set,data_labels,shuffle,n);
-        
-%         [tra tes]=GenerateSubsets('nFold_balanced_trainset',data_set,data_labels,shuffle,n);
+
+        if para.balanced_trainset
+            [tra tes]=GenerateSubsets('nFold_balanced_trainset',data_set,data_labels,shuffle,n);
+%             train=tra{1}; test=tes{1};
+            %intersect(train,test)
+        else
+            [tra tes]=GenerateSubsets('nFold',data_set,data_labels,shuffle,n);
+        end
         decision=zeros(size(data_labels)); prediction=zeros(size(data_labels));
     else
         tra{1} = Subsets{j}.training;
@@ -94,8 +100,8 @@ for j=1:nIter
         
         training_set = data_set(tra{i},:);
         testing_set = data_set(tes{i},:);
-        training_labels = data_labels(tra{i});
-        testing_labels = data_labels(tes{i});
+        training_labels = data_labels(tra{i});%sum(training_labels)  sum(~training_labels)
+        testing_labels = data_labels(tes{i});%sum(testing_labels) sum(~testing_labels)
         
         %%% do feature selection on the fly
         %% using mrmr
@@ -122,15 +128,15 @@ for j=1:nIter
                 [TTidx,confidence] = prunefeatures_new(training_set, training_labels, 'ttestp');
                 %                 idx_TTest=TTidx(confidence<0.05);
                 %                 if isempty(idx_TTest)
-                idx_TTest=TTidx(1:min(para.num_top_feature*3,size(data_set,2)));
+                idx_TTest=TTidx(1:min(para.num_top_feature*8,size(data_set,2)));
                 %                 end
             end
             
             if strcmp(para.featureranking,'wilcoxon')
-                [TTidx,confidence] = prunefeatures_new(training_set, training_labels, 'wilcoxon');%sum(training_labels)
+                [TTidx,confidence] = prunefeatures_new(training_set, training_labels, 'wilcoxon');
                 %                 idx_TTest=TTidx(confidence<0.5);
                 %                 if isempty(idx_TTest)
-                idx_TTest=TTidx(1:min(para.num_top_feature*3,size(data_set,2)));
+                idx_TTest=TTidx(1:min(para.num_top_feature*8,size(data_set,2)));
                 %                 end
             end
             
