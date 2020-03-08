@@ -1,0 +1,18 @@
+function [training testing] = LOO(data_set, data_labels)
+
+data_labels = data_labels(:);
+
+testing_labels=cell(1,length(data_labels)); testing_set=cell(1,length(data_labels));
+training_labels=cell(1,length(data_labels)); training_set=cell(1,length(data_labels));
+for i=1:length(data_labels)
+    
+    % set testing set and labels
+    testing{i} = i;
+    
+    % set training set as all samples not included in testing set
+    
+    training_set{i} = data_set;
+    training_labels{i} = data_labels;
+    training_set{i}(i,:) = [];
+    training_labels{i}(i) = [];
+end
